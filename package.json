@@ -12,23 +12,33 @@
     "url": "https://github.com/benallfree/pbgo"
   },
   "homepage": "https://github.com/benallfree/pbgo",
+  "type": "module",
   "bin": {
-    "pbgo": "cli.mjs"
+    "pbgo": "dist/cli.js"
   },
   "scripts": {
     "update": "bun run update-versions.ts",
     "build": "bun run build.ts",
+    "bundle": "bunx tsdown src/index.ts src/cli.ts --outDir dist --format esm --dts --clean --unbundle",
+    "prepare": "bun run bundle",
     "lint": "prettier --check .",
     "format": "prettier --write ."
   },
   "files": [
-    "index.mjs",
-    "cli.mjs",
+    "dist/",
     "versions.json"
   ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "devDependencies": {
+    "@types/node": "^24.2.0",
     "prettier": "^3.6.2",
-    "prettier-plugin-organize-imports": "^4.2.0"
+    "prettier-plugin-organize-imports": "^4.2.0",
+    "tsdown": "^0.13.3"
   },
   "prettier": {
     "plugins": [

@@ -1,34 +1,45 @@
 #!/usr/bin/env node
 
-import { spawn } from 'child_process'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
-import path from 'path'
-import { pbgo } from './index.mjs'
+import { spawn } from 'node:child_process'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
+import { pbgo } from './index'
+import * as dockerProvider from './providers/docker'
+import * as podmanProvider from './providers/podman'
 
-function getPbgorcPath(baseDir) {
+function getPbgorcPath(baseDir: string): string {
   return path.join(baseDir, '.pbgorc')
 }
 
-function readDefaultVersionFromConfig(baseDir) {
+function readDefaultVersionFromConfig(baseDir: string): string | null {
   try {
     const configPath = getPbgorcPath(baseDir)
     if (existsSync(configPath)) {
       const contents = readFileSync(configPath, 'utf8').trim()
-      if (contents) return contents
+      if (!contents) return null
+      try {
+        const parsed = JSON.parse(contents) as { version?: string }
+        if (parsed && typeof parsed.version === 'string' && parsed.version.trim() !== '') {
+          return parsed.version.trim()
+        }
+      } catch (_) {
+        return null
+      }
     }
   } catch (_) {}
   return null
 }
 
-function writeDefaultVersionToConfig(baseDir, version) {
+function writeDefaultVersionToConfig(baseDir: string, version: string): void {
   const configPath = getPbgorcPath(baseDir)
-  writeFileSync(configPath, `${version}\n`, 'utf8')
+  const data = { version }
+  writeFileSync(configPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
 }
 
-async function listDockerHubTags(namespace, repository) {
+async function listDockerHubTags(namespace: string, repository: string): Promise<string[]> {
   let page = 1
   const pageSize = 100
-  let allTags = []
+  let allTags: string[] = []
   try {
     while (true) {
       const url = `https://registry.hub.docker.com/v2/namespaces/${namespace}/repositories/${repository}/tags?page_size=${pageSize}&page=${page}`
@@ -37,7 +48,7 @@ async function listDockerHubTags(namespace, repository) {
         if (response.status === 404) break
         throw new Error(`HTTP error! Status: ${response.status}`)
       }
-      const data = await response.json()
+      const data = (await response.json()) as { results?: Array<{ name: string }> }
       if (!data.results || data.results.length === 0) break
       const tags = data.results.map((tag) => tag.name)
       allTags = allTags.concat(tags)
@@ -49,16 +60,28 @@ async function listDockerHubTags(namespace, repository) {
   }
 }
 
+function detectContainerRuntime(): 'podman' | 'docker' | null {
+  if (podmanProvider.check()) return 'podman'
+  if (dockerProvider.check()) return 'docker'
+  return null
+}
+
 ;(async () => {
   const args = process.argv.slice(2)
   const currentDir = process.cwd()
   let version = readDefaultVersionFromConfig(currentDir) || 'latest'
   let port = 8090
-  let dockerArgs = []
+  const dockerArgs: string[] = []
   let isSshMode = false
   let isVersionsMode = false
   let isUseMode = false
-  let useModeVersion = null
+  let useModeVersion: string | null = null
+  const runtime = detectContainerRuntime()
+
+  if (!runtime) {
+    console.error('Error: Neither Podman nor Docker is available on PATH')
+    process.exit(1)
+  }
 
   if (args.length > 0 && args[0] === 'term') {
     isSshMode = true
@@ -74,7 +97,7 @@ async function listDockerHubTags(namespace, repository) {
     isUseMode = true
     args.shift()
     if (args.length > 0) {
-      useModeVersion = args.shift()
+      useModeVersion = args.shift() || null
     } else {
       console.error('Error: pbgo use <version> requires a version value')
       process.exit(1)
@@ -93,7 +116,7 @@ async function listDockerHubTags(namespace, repository) {
       }
     } else if (arg === '-p' || arg === '--port') {
       if (i + 1 < args.length) {
-        const portValue = parseInt(args[i + 1])
+        const portValue = parseInt(args[i + 1] as string)
         if (isNaN(portValue) || portValue < 1 || portValue > 65535) {
           console.error('Error: Port must be a valid number between 1 and 65535')
           process.exit(1)
@@ -123,10 +146,10 @@ async function listDockerHubTags(namespace, repository) {
 
   if (isUseMode) {
     try {
-      writeDefaultVersionToConfig(currentDir, useModeVersion)
+      writeDefaultVersionToConfig(currentDir, useModeVersion as string)
       console.log(`Default PocketBase version set to '${useModeVersion}' in ${getPbgorcPath(currentDir)}`)
       process.exit(0)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error writing .pbgorc:', error.message)
       process.exit(1)
     }
@@ -138,14 +161,17 @@ async function listDockerHubTags(namespace, repository) {
     version,
     dockerArgs,
     isSshMode,
+    runtime,
   })
 
   const child = spawn(command, dockerArgsFinal, { stdio: 'inherit', shell: true })
   child.on('error', (error) => {
-    console.error('Error running PocketBase:', error.message)
+    console.error('Error running PocketBase:', (error as any).message)
     process.exit(1)
   })
   child.on('exit', (code) => {
-    process.exit(code)
+    process.exit(code ?? 0)
   })
 })()
+
+
