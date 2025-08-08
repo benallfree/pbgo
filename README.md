@@ -13,10 +13,10 @@ A simple CLI wrapper for running PocketBase in Docker or Podman with sensible de
 npx pbgo
 
 # Run with custom port
-npx pbgo --pg-port 9090
+npx pbgo --http 0.0.0.0:9090
 
 # Run specific PocketBase version
-npx pbgo --pg-use 0.29.1
+npx pbgo --use 0.29.1
 
 # Run with custom PocketBase arguments
 npx pbgo --dev --dir=/data/pb_data
@@ -43,10 +43,10 @@ npx pbgo
 npx pbgo serve
 
 # Start with custom port
-npx pbgo --pg-port 9090
+npx pbgo --http 0.0.0.0:9090
 
 # Use specific PocketBase version
-npx pbgo --pg-use 0.29.1
+npx pbgo --use 0.29.1
 
 # Open a terminal in the container
 npx pbgo term
@@ -54,20 +54,23 @@ npx pbgo term
 # List available versions
 npx pbgo versions
 
-# Set default version in current directory (.pbgorc, JSON)
+# Set default version in current directory (.pbgorc)
 npx pbgo use 0.29.1
 ```
 
 ### Command Options
 
-- `--pg-port, -pgp <port>` - Map container port to host port (default: 8090)
-- `--pg-use, -pgu <version>` - Use specific PocketBase version (default: `.pbgorc` value if present, otherwise `latest`)
-- `term` or `--pg-term, -pgt` - Start bash session in container instead of PocketBase
-- `versions` or `--pg-versions, -pgV` - List all available PocketBase versions
-- `use <version>` - Write `<version>` to `.pbgorc` in the current directory
-- `--pg-provider, -pgr <provider>` - Select container provider: `podman` or `docker`
+- `--http <address>` - HTTP server address (default: 0.0.0.0:8090)
+- `--use <version>` or `-u <version>` - Use specific PocketBase version (default: `.pbgorc` value if present, otherwise `latest`)
+- `--term` or `-t` - Run in terminal mode
+- `--provider <provider>` or `-r <provider>` - Select container provider: `podman` or `docker`
+- `--dir <dir>` - PocketBase data directory (default: `<cwd>/pb_data`)
+- `--hooksDir <hooksDir>` - PocketBase hooks directory
+- `--publicDir <publicDir>` - PocketBase public directory
+- `--migrationsDir <migrationsDir>` - PocketBase migrations directory
+- `--version` or `-v` - Display version information
 
-All non-`pg` flags (for example, `--dev`, `--dir=/path`, `--version`) are forwarded to PocketBase unchanged. Both "attached" and "separate" forms are accepted: `-x <v>`, `-x<v>`, `--opt <v>`, and `--opt=<v>`.
+All other arguments are passed directly to PocketBase unchanged.
 
 ### PocketBase Arguments
 
@@ -83,14 +86,18 @@ npx pbgo --dir=/my_pb_data
 # Show PocketBase version
 npx pbgo --version
 
-# Show a available Docker images
+# Show available Docker images
 npx pbgo versions
 ```
 
 ## Features
 
 - **Automatic HTTP binding**: When you run `serve`, the CLI adds `--http="0.0.0.0:8090"` if not already specified
-- **Volume mounting**: Current directory is mounted to `/data` in the container
+- **Volume mounting**: Automatically mounts PocketBase directories:
+  - `pb_data` - Data directory (default: `<cwd>/pb_data`)
+  - `pb_hooks` - Hooks directory (default: `<parent>/pb_hooks`)
+  - `pb_public` - Public directory (default: `<parent>/pb_public`)
+  - `pb_migrations` - Migrations directory (default: `<parent>/pb_migrations`)
 - **Multi-architecture**: Supports amd64, arm64, and arm/v7/v8 architectures
 - **Version pinning**: Use `--use` to specify exact PocketBase versions
   - Persist a default version per project with `pbgo use <version>` (writes `.pbgorc`)
@@ -110,7 +117,7 @@ If the chosen provider is not available on PATH, the CLI exits with an error.
 
 ## Project Config with .pbgorc
 
-You can set a default PocketBase version per project directory by creating a `.pbgorc` file that contains JSON (for example, `{"version":"0.29.1"}` or `{"version":"latest"}`). The CLI will use this value as the default for `--pg-use`. You can also specify a default provider here.
+You can set a default PocketBase version per project directory by creating a `.pbgorc` file that contains JSON (for example, `{"version":"0.29.1"}` or `{"version":"latest"}`). The CLI will use this value as the default for `--use`. You can also specify a default provider here.
 
 ```bash
 # Save default version to ./.pbgorc
@@ -120,10 +127,10 @@ npx pbgo use 0.29.1
 npx pbgo
 
 # Override the default version for a single run
-npx pbgo --pg-use latest
+npx pbgo --use latest
 
 # Choose provider explicitly for a run
-npx pbgo --pg-provider podman
+npx pbgo --provider podman
 ```
 
 ### .pbgorc example
@@ -134,6 +141,26 @@ npx pbgo --pg-provider podman
   "provider": "podman"
 }
 ```
+
+## Directory Structure
+
+The CLI automatically creates and manages PocketBase directories:
+
+```
+your-project/
+├── .pbgorc                    # Configuration file
+├── pb_data/                   # PocketBase data (created automatically)
+├── pb_hooks/                  # PocketBase hooks (created automatically)
+├── pb_public/                 # PocketBase public files (created automatically)
+└── pb_migrations/             # PocketBase migrations (created automatically)
+```
+
+You can override any of these directories using the respective CLI options:
+
+- `--dir` for data directory
+- `--hooksDir` for hooks directory
+- `--publicDir` for public directory
+- `--migrationsDir` for migrations directory
 
 ## Docker Image
 

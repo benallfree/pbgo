@@ -2,22 +2,19 @@ export type ContainerRuntime = 'docker' | 'podman'
 
 export type Target = string
 export type HostPath = string
-export interface RunOptions {
-  host?: string
-  port?: number
-  version?: string
-  args?: string[]
-  isTermMode?: boolean
-  binds?: Record<Target, HostPath>
-}
-
-export type AssembleOptions = RunOptions
-
-export interface PbgoOptions extends RunOptions {
-  runtime?: ContainerRuntime
-}
-
-export interface AssembledCommand {
-  command: string
+export type OsiTag = string
+export type FilePath = string
+export interface PbgoOptions {
+  use: OsiTag
+  host: string
+  port: number
   args: string[]
+  isTermMode: boolean
+  binds: Record<Target, HostPath>
+  runtime: ContainerRuntime
+  dir: FilePath
+  hooksDir: FilePath
+  publicDir: FilePath
+  migrationsDir: FilePath
+  verbose: boolean
 }
