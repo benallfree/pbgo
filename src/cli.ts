@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { pbgo } from './index'
-import * as dockerProvider from './providers/docker'
-import * as podmanProvider from './providers/podman'
 
 function getPbgorcPath(baseDir: string): string {
   return path.join(baseDir, '.pbgorc')
@@ -88,9 +86,26 @@ async function listDockerHubTags(namespace: string, repository: string): Promise
   }
 }
 
+function checkContainerRuntimeAvailable(cmd: string): boolean {
+  try {
+    const result = spawnSync(cmd, ['--version'], { stdio: 'ignore' })
+    return !result.error && result.status === 0
+  } catch {
+    return false
+  }
+}
+
+function checkDocker(): boolean {
+  return checkContainerRuntimeAvailable('docker')
+}
+
+function checkPodman(): boolean {
+  return checkContainerRuntimeAvailable('podman')
+}
+
 function detectContainerRuntime(): 'podman' | 'docker' | null {
-  if (podmanProvider.check()) return 'podman'
-  if (dockerProvider.check()) return 'docker'
+  if (checkPodman()) return 'podman'
+  if (checkDocker()) return 'docker'
   return null
 }
 
@@ -215,7 +230,7 @@ async function runPocketBase(
   const preferredProvider = cliProvider || readProviderFromConfig(configDir)
   let runtime: 'podman' | 'docker' | null = null
   if (preferredProvider) {
-    const isAvailable = preferredProvider === 'podman' ? podmanProvider.check() : dockerProvider.check()
+    const isAvailable = preferredProvider === 'podman' ? checkPodman() : checkDocker()
     if (!isAvailable) {
       console.error(`Error: Provider '${preferredProvider}' is not available on PATH`)
       process.exit(1)
@@ -238,17 +253,41 @@ async function runPocketBase(
     process.exit(1)
   }
 
-  const runtimeOk = runtime === 'podman' ? podmanProvider.check() : dockerProvider.check()
+  const runtimeOk = runtime === 'podman' ? checkPodman() : checkDocker()
   if (!runtimeOk) {
     console.error(`Error: Selected provider '${runtime}' is not available on PATH`)
     process.exit(1)
   }
 
+  // Filter out any pbgo options that might have been passed as arguments due to ordering
+  const pbgoOptions = [
+    '--http',
+    '--use',
+    '--provider',
+    '--term',
+    '--dir',
+    '--hooksDir',
+    '--publicDir',
+    '--migrationsDir',
+    '-u',
+    '-r',
+    '-t',
+  ]
+
+  const filteredArgs = passthroughArgs.filter((arg, index, arr) => {
+    // Remove pbgo options in --option=value format
+    if (pbgoOptions.some((opt) => arg.startsWith(`${opt}=`))) return false
+    // Remove pbgo options in --option value format
+    if (pbgoOptions.includes(arg)) return false
+    if (index > 0 && pbgoOptions.includes(arr[index - 1]!)) return false
+    return true
+  })
+
   const { command, args: providerArgs } = pbgo({
     host: options.host,
     port,
     version,
-    args: passthroughArgs,
+    args: filteredArgs,
     isTermMode,
     runtime,
     binds,
