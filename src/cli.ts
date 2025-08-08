@@ -4,6 +4,7 @@ import { Command } from 'commander'
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { version as pkgVersion } from '../package.json'
 import { pbgo } from './index'
 
 function getPbgorcPath(baseDir: string): string {
@@ -269,9 +270,11 @@ async function runPocketBase(
     '--hooksDir',
     '--publicDir',
     '--migrationsDir',
+    '--version',
     '-u',
     '-r',
     '-t',
+    '-v',
   ]
 
   const filteredArgs = passthroughArgs.filter((arg, index, arr) => {
@@ -308,7 +311,7 @@ async function runPocketBase(
 // CLI setup with Commander.js
 const program = new Command()
 
-program.name('pbgo').description('PocketBase container runner').version('0.0.1-rc.4').enablePositionalOptions() // Required for passThroughOptions on subcommands
+program.name('pbgo').description('PocketBase container runner').enablePositionalOptions() // Required for passThroughOptions on subcommands
 
 // Global options
 program
@@ -320,6 +323,7 @@ program
   .option('--hooksDir <hooksDir>', 'PocketBase hooks directory')
   .option('--publicDir <publicDir>', 'PocketBase public directory')
   .option('--migrationsDir <migrationsDir>', 'PocketBase migrations directory')
+  .option('-v, --version', 'display version information')
   .allowUnknownOption() // Allow unknown options to be passed through
 
 // Default command (run PocketBase)
@@ -328,6 +332,43 @@ program
   .allowExcessArguments()
   .passThroughOptions()
   .action(async (args, options) => {
+    // Handle version request - show both pbgo and PocketBase versions
+    if (options.version || args.includes('--version') || args.includes('-v')) {
+      const runtime = options.provider || detectContainerRuntime()
+      if (!runtime) {
+        console.error('Error: No container runtime available (docker or podman)')
+        process.exit(1)
+      }
+
+      const version = options.use || 'latest'
+      const command = runtime
+      const args = ['run', '--rm', `benallfree/pocketbase:${version}`, 'pocketbase', '--version']
+
+      console.log(`pbgo version: ${pkgVersion}`)
+
+      // Capture PocketBase version output
+      const { spawn } = require('node:child_process')
+      const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'inherit'] })
+
+      let pocketbaseVersion = ''
+      child.stdout?.on('data', (data: Buffer) => {
+        pocketbaseVersion += data.toString()
+      })
+
+      child.on('exit', (code: number | null) => {
+        if (code === 0) {
+          // Extract version from output (e.g., "pocketbase version 0.29.1" -> "0.29.1")
+          const versionMatch = pocketbaseVersion.match(/pocketbase version (\S+)/)
+          const actualVersion = versionMatch ? versionMatch[1] : 'unknown'
+          console.log(`PocketBase container version: ${actualVersion} (tag: ${version})`)
+        } else {
+          console.log(`PocketBase container version: unknown (tag: ${version})`)
+        }
+        process.exit(code ?? 0)
+      })
+      return
+    }
+
     const { host, port } = parseHttpAddress(options.http)
 
     await runPocketBase(
@@ -381,6 +422,44 @@ program
   .passThroughOptions()
   .action(async (args) => {
     const globalOptions = program.opts()
+
+    // Handle version request - show both pbgo and PocketBase versions
+    if (globalOptions.version || args.includes('--version')) {
+      const runtime = globalOptions.provider || detectContainerRuntime()
+      if (!runtime) {
+        console.error('Error: No container runtime available (docker or podman)')
+        process.exit(1)
+      }
+
+      const version = globalOptions.use || 'latest'
+      const command = runtime
+      const args = ['run', '--rm', `benallfree/pocketbase:${version}`, 'pocketbase', '--version']
+
+      console.log(`pbgo version: ${pkgVersion}`)
+
+      // Capture PocketBase version output
+      const { spawn } = require('node:child_process')
+      const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'inherit'] })
+
+      let pocketbaseVersion = ''
+      child.stdout?.on('data', (data: Buffer) => {
+        pocketbaseVersion += data.toString()
+      })
+
+      child.on('exit', (code: number | null) => {
+        if (code === 0) {
+          // Extract version from output (e.g., "pocketbase version 0.29.1" -> "0.29.1")
+          const versionMatch = pocketbaseVersion.match(/pocketbase version (\S+)/)
+          const actualVersion = versionMatch ? versionMatch[1] : 'unknown'
+          console.log(`PocketBase container version: ${actualVersion} (tag: ${version})`)
+        } else {
+          console.log(`PocketBase container version: unknown (tag: ${version})`)
+        }
+        process.exit(code ?? 0)
+      })
+      return
+    }
+
     const { host, port } = parseHttpAddress(globalOptions.http)
 
     await runPocketBase(
