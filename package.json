@@ -1,6 +1,6 @@
 {
   "name": "pbgo",
-  "version": "0.0.1-rc.2",
+  "version": "0.0.1-rc.3",
   "description": "PocketBase container runner",
   "author": {
     "name": "Ben Allfree",
@@ -9,9 +9,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pockethost/pockethost/tree/main/packages/pbgo"
+    "url": "https://github.com/benallfree/pbgo"
   },
-  "homepage": "https://github.com/pockethost/pockethost/tree/main/packages/pbgo",
+  "homepage": "https://github.com/benallfree/pbgo",
   "bin": {
     "pbgo": "index.mjs"
   },
