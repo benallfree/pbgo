@@ -1,22 +1,6 @@
 import { assemble as assembleWithDocker } from './providers/docker'
 import { assemble as assembleWithPodman } from './providers/podman'
-import type { AssembleOptions } from './types'
-
-export type ContainerRuntime = 'docker' | 'podman'
-
-export interface PbgoOptions {
-  currentDir: string
-  port?: number
-  version?: string
-  args?: string[]
-  isTermMode?: boolean
-  runtime?: ContainerRuntime
-}
-
-export interface AssembledCommand {
-  command: string
-  args: string[]
-}
+import type { AssembledCommand, AssembleOptions, PbgoOptions } from './types'
 
 export function pbgo(options: PbgoOptions): AssembledCommand {
   const {
@@ -31,3 +15,5 @@ export function pbgo(options: PbgoOptions): AssembledCommand {
   const assemble = runtime === 'podman' ? assembleWithPodman : assembleWithDocker
   return assemble({ currentDir, port, version, args, isTermMode } as AssembleOptions)
 }
+
+export type { AssembledCommand, AssembleOptions, PbgoOptions }
