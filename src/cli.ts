@@ -71,7 +71,7 @@ function detectContainerRuntime(): 'podman' | 'docker' | null {
   const currentDir = process.cwd()
   let version = readDefaultVersionFromConfig(currentDir) || 'latest'
   let port = 8090
-  const dockerArgs: string[] = []
+  const argsCollected: string[] = []
   let isSshMode = false
   let isVersionsMode = false
   let isUseMode = false
@@ -128,7 +128,7 @@ function detectContainerRuntime(): 'podman' | 'docker' | null {
         process.exit(1)
       }
     } else {
-      dockerArgs.push(arg)
+      argsCollected.push(arg)
     }
   }
 
@@ -159,8 +159,8 @@ function detectContainerRuntime(): 'podman' | 'docker' | null {
     currentDir,
     port,
     version,
-    dockerArgs,
-    isSshMode,
+    args: argsCollected,
+    isTermMode: isSshMode,
     runtime,
   })
 
@@ -173,5 +173,3 @@ function detectContainerRuntime(): 'podman' | 'docker' | null {
     process.exit(code ?? 0)
   })
 })()
-
-
