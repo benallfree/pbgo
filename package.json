@@ -19,7 +19,8 @@
   "scripts": {
     "update": "bun run update-versions.ts",
     "build": "bun run build.ts",
-    "bundle": "bunx tsdown src/index.ts src/cli.ts --outDir dist --format esm --dts --clean --unbundle",
+    "bundle": "bunx tsdown --config tsdown.config.ts",
+    "dev": "bunx tsdown --config tsdown.config.ts --watch",
     "prepare": "bun run bundle",
     "lint": "prettier --check .",
     "format": "prettier --write ."

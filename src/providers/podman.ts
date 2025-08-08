@@ -21,11 +21,11 @@ export function assemble(options: AssembleOptions): { command: string; args: str
   } else {
     const hasServeCommand = userArgs.includes('serve')
     args.push(
-      ...[
+      ...([
         'pocketbase',
         ...userArgs,
         hasServeCommand ? (userArgs.find((arg) => arg.startsWith('--http')) ? null : '--http="0.0.0.0:8090"') : null,
-      ].filter(Boolean) as string[]
+      ].filter(Boolean) as string[])
     )
   }
 
@@ -40,5 +40,3 @@ export function check(): boolean {
     return false
   }
 }
-
-
