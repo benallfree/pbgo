@@ -13,14 +13,32 @@
   },
   "homepage": "https://github.com/benallfree/pbgo",
   "bin": {
-    "pbgo": "index.mjs"
+    "pbgo": "cli.mjs"
   },
   "scripts": {
     "update": "bun run update-versions.ts",
-    "build": "bun run build.ts"
+    "build": "bun run build.ts",
+    "lint": "prettier --check .",
+    "format": "prettier --write ."
   },
   "files": [
     "index.mjs",
+    "cli.mjs",
     "versions.json"
-  ]
+  ],
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "prettier-plugin-organize-imports": "^4.2.0"
+  },
+  "prettier": {
+    "plugins": [
+      "prettier-plugin-organize-imports"
+    ],
+    "singleQuote": true,
+    "trailingComma": "es5",
+    "arrowParens": "always",
+    "printWidth": 120,
+    "tabWidth": 2,
+    "semi": false
+  }
 }
