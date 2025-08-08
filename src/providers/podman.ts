@@ -2,19 +2,24 @@ import { spawnSync } from 'node:child_process'
 import type { AssembleOptions } from '../types'
 
 export function assemble(options: AssembleOptions): { command: string; args: string[] } {
-  const { currentDir, port = 8090, version = 'latest', args: userArgs = [], isTermMode = false } = options || {}
+  const {
+    host = '0.0.0.0',
+    port = 8090,
+    version = 'latest',
+    args: userArgs = [],
+    isTermMode = false,
+    binds = {},
+  } = options || {}
 
   const command = 'podman'
-  const args = [
-    'run',
-    '--rm',
-    '-it',
-    '-v',
-    `${currentDir}:/data`,
-    '-p',
-    `${port}:8090`,
-    `benallfree/pocketbase:${version}`,
-  ]
+  const args = ['run', '--rm', '-it', '-p', `${host}:${port}:8090`, `benallfree/pocketbase:${version}`]
+
+  // Layer additional bind mounts
+  for (const [key, hostPath] of Object.entries(binds)) {
+    if (!hostPath) continue
+    const containerPath = `/data/${key}`
+    args.splice(args.length - 1, 0, '-v', `${hostPath}:${containerPath}`)
+  }
 
   if (isTermMode) {
     args.push('bash')

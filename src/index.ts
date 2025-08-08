@@ -4,16 +4,17 @@ import type { AssembledCommand, AssembleOptions, PbgoOptions } from './types'
 
 export function pbgo(options: PbgoOptions): AssembledCommand {
   const {
-    currentDir,
+    host = '0.0.0.0',
     port = 8090,
     version = 'latest',
     args = [],
     isTermMode = false,
     runtime = 'docker',
+    binds = {},
   } = options || ({} as PbgoOptions)
 
   const assemble = runtime === 'podman' ? assembleWithPodman : assembleWithDocker
-  return assemble({ currentDir, port, version, args, isTermMode } as AssembleOptions)
+  return assemble({ host, port, version, args, isTermMode, binds })
 }
 
 export type { AssembledCommand, AssembleOptions, PbgoOptions }

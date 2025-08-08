@@ -1,11 +1,14 @@
 export type ContainerRuntime = 'docker' | 'podman'
 
+export type Target = string
+export type HostPath = string
 export interface RunOptions {
-  currentDir: string
+  host?: string
   port?: number
   version?: string
   args?: string[]
   isTermMode?: boolean
+  binds?: Record<Target, HostPath>
 }
 
 export type AssembleOptions = RunOptions

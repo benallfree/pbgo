@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
+import { Command } from 'commander'
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { pbgo } from './index'
 import * as dockerProvider from './providers/docker'
@@ -93,322 +94,271 @@ function detectContainerRuntime(): 'podman' | 'docker' | null {
   return null
 }
 
-;(async () => {
-  type PgOptions = {
+// Parse HTTP address into host and port
+function parseHttpAddress(httpAddress: string | undefined): { host: string; port: number } {
+  if (!httpAddress) {
+    return { host: '0.0.0.0', port: 8090 }
+  }
+
+  const parts = httpAddress.split(':')
+  if (parts.length === 1) {
+    // Just port number
+    return { host: '0.0.0.0', port: parseInt(parts[0] || '8090', 10) || 8090 }
+  } else if (parts.length === 2) {
+    // host:port
+    return { host: parts[0] || '0.0.0.0', port: parseInt(parts[1] || '8090', 10) || 8090 }
+  } else {
+    // Invalid format, use defaults
+    return { host: '0.0.0.0', port: 8090 }
+  }
+}
+
+function parsePocketBaseDirectoryArgs(
+  dir?: string,
+  hooksDir?: string,
+  publicDir?: string,
+  migrationsDir?: string
+): { binds: Record<string, string>; dataDir: string } {
+  const binds: Record<string, string> = {}
+
+  // Default --dir to <cwd>/pb_data if not specified
+  const dataDir = dir || path.join(process.cwd(), 'pb_data')
+
+  // Helper function to ensure directory exists
+  const ensureDir = (dirPath: string): string => {
+    const resolvedPath = path.resolve(dirPath)
+    if (!existsSync(resolvedPath)) {
+      try {
+        mkdirSync(resolvedPath, { recursive: true })
+        console.log(`Created directory: ${resolvedPath}`)
+      } catch (error) {
+        console.error(`Failed to create directory ${resolvedPath}:`, (error as Error).message)
+        process.exit(1)
+      }
+    }
+    return resolvedPath
+  }
+
+  // Handle --dir (or default)
+  const resolvedDataDir = ensureDir(dataDir)
+  binds['pb_data'] = resolvedDataDir
+  const dirParent = path.dirname(resolvedDataDir)
+
+  // Handle explicit directory overrides
+  if (hooksDir) {
+    binds['pb_hooks'] = ensureDir(hooksDir)
+  }
+  if (publicDir) {
+    binds['pb_public'] = ensureDir(publicDir)
+  }
+  if (migrationsDir) {
+    binds['pb_migrations'] = ensureDir(migrationsDir)
+  }
+
+  // If we haven't explicitly set other directories, derive them from the parent
+  if (!binds['pb_hooks']) {
+    binds['pb_hooks'] = ensureDir(path.join(dirParent, 'pb_hooks'))
+  }
+  if (!binds['pb_public']) {
+    binds['pb_public'] = ensureDir(path.join(dirParent, 'pb_public'))
+  }
+  if (!binds['pb_migrations']) {
+    binds['pb_migrations'] = ensureDir(path.join(dirParent, 'pb_migrations'))
+  }
+
+  return { binds, dataDir: resolvedDataDir }
+}
+
+async function handleVersions() {
+  console.log('Fetching available PocketBase versions from Docker Hub...')
+  const tags = await listDockerHubTags('benallfree', 'pocketbase')
+  if (tags.length > 0) {
+    console.log('Available PocketBase versions:')
+    for (const tag of tags) console.log(`  ${tag}`)
+  } else {
+    console.log('No versions found or error occurred')
+  }
+}
+
+async function runPocketBase(
+  isTermMode: boolean,
+  options: {
+    host?: string
     port?: number
     use?: string
     provider?: 'podman' | 'docker'
-    term?: boolean
-    listVersions?: boolean
+    dir?: string
+    hooksDir?: string
+    publicDir?: string
+    migrationsDir?: string
+  },
+  passthroughArgs: string[]
+) {
+  const cliProviderRaw = options.provider?.toLowerCase()
+  if (cliProviderRaw && cliProviderRaw !== 'podman' && cliProviderRaw !== 'docker') {
+    console.error("Error: --provider must be 'podman' or 'docker'")
+    process.exit(1)
   }
 
-  function printHelp() {
-    const help = `pbgo - PocketBase container runner
+  // Parse PocketBase directory arguments and convert them to bind mounts
+  const { binds, dataDir } = parsePocketBaseDirectoryArgs(
+    options.dir,
+    options.hooksDir,
+    options.publicDir,
+    options.migrationsDir
+  )
 
-Usage:
-  pbgo [term] [--] [DOWNSTREAM ARGS...]
-  pbgo versions
-  pbgo use <version>
+  // Use the parent directory of the data dir for config operations
+  const configDir = path.dirname(dataDir)
 
-PBGO options (prefixed with pg and filtered from downstream):
-  --pg-port, -pgp <port>           Port to expose (default 8090)
-  --pg-use, -pgu <version>         Run with specific PocketBase version
-  --pg-provider, -pgr <provider>   Select provider: podman|docker
-  --pg-term, -pgt                  Run in terminal mode
-  --pg-versions, -pgV              List available PocketBase Docker tags and exit
-  --help                           Show this help
-`
-    console.log(help)
-  }
-
-  function parseArgs(argv: string[]): {
-    pg: PgOptions
-    passthrough: string[]
-    command?: 'versions' | 'use' | 'run'
-    useVersionArg?: string
-  } {
-    const pg: PgOptions = {}
-    const passthrough: string[] = []
-    let i = 0
-    let endOfOptions = false
-    let command: 'versions' | 'use' | 'run' | undefined
-    let useVersionArg: string | undefined
-
-    const takeValue = (currentToken: string, nextToken?: string): { value?: string; consumedNext: boolean } => {
-      // Handles --opt=value, -pgx=value, -pgxVALUE and their spaced variants
-      const eqIdx = currentToken.indexOf('=')
-      if (eqIdx >= 0) {
-        return { value: currentToken.slice(eqIdx + 1), consumedNext: false }
-      }
-      if (nextToken && !nextToken.startsWith('-')) {
-        return { value: nextToken, consumedNext: true }
-      }
-      // Attached short style for -pgxVALUE (no '=')
-      return { value: undefined, consumedNext: false }
-    }
-
-    while (i < argv.length) {
-      const tok = argv[i]!
-      const next = i + 1 < argv.length ? argv[i + 1]! : undefined
-
-      if (endOfOptions) {
-        passthrough.push(tok)
-        i++
-        continue
-      }
-
-      if (tok === '--') {
-        endOfOptions = true
-        i++
-        continue
-      }
-
-      // Positional commands handled by pbgo itself
-      if (!tok.startsWith('-')) {
-        if (!command && tok === 'versions') {
-          command = 'versions'
-          i++
-          continue
-        }
-        if (!command && tok === 'use') {
-          command = 'use'
-          if (next && !next.startsWith('-')) {
-            useVersionArg = next
-            i += 2
-          } else {
-            i++
-          }
-          continue
-        }
-        if (!command && tok === 'term') {
-          pg.term = true
-          i++
-          continue
-        }
-        // Any other positional goes downstream
-        passthrough.push(tok)
-        i++
-        continue
-      }
-
-      // Long pg options: --pg-*
-      if (tok.startsWith('--pg-')) {
-        const namePart = tok.slice(5)
-        const [nameOnly] = namePart.split('=')
-        const { value, consumedNext } = takeValue(tok, next)
-        switch (nameOnly) {
-          case 'port': {
-            const raw = value ?? (next && !next.startsWith('-') ? next : undefined) ?? ''
-            const parsed = parseInt(raw, 10)
-            if (!Number.isNaN(parsed)) pg.port = parsed
-            if (value === undefined && consumedNext) i++
-            i++
-            continue
-          }
-          case 'use': {
-            const v = value ?? (next && !next.startsWith('-') ? next : undefined)
-            if (typeof v === 'string') pg.use = v
-            if (value === undefined && consumedNext) i++
-            i++
-            continue
-          }
-          case 'provider': {
-            const v = (value ?? (next && !next.startsWith('-') ? next : undefined))?.toLowerCase()
-            if (v === 'podman' || v === 'docker') pg.provider = v
-            if (value === undefined && consumedNext) i++
-            i++
-            continue
-          }
-          case 'term': {
-            pg.term = true
-            i++
-            continue
-          }
-          case 'versions': {
-            pg.listVersions = true
-            i++
-            continue
-          }
-          case 'help': {
-            printHelp()
-            process.exit(0)
-          }
-          default: {
-            // Unknown pg option: ignore from downstream to avoid breaking downstream tools
-            i++
-            continue
-          }
-        }
-      }
-
-      // Short pg options: -pgx[=]value?
-      if (tok.startsWith('-pg') && tok.length >= 4) {
-        const keyAndMaybeValue = tok.slice(3)
-        const key = keyAndMaybeValue[0]
-        const rest = keyAndMaybeValue.slice(1)
-        const eqIdx = rest.indexOf('=')
-        const attached = eqIdx >= 0 ? rest.slice(eqIdx + 1) : rest
-        const hasExplicitEq = eqIdx >= 0
-        const valFromNext = next && !next.startsWith('-') ? next : undefined
-        const take = (needsValue: boolean): string | undefined => {
-          if (hasExplicitEq) return attached
-          if (attached) return attached
-          if (needsValue) return valFromNext
-          return undefined
-        }
-        switch (key) {
-          case 'p': {
-            const raw = take(true)
-            if (raw !== undefined) {
-              const parsed = parseInt(raw, 10)
-              if (!Number.isNaN(parsed)) pg.port = parsed
-            }
-            if (!hasExplicitEq && !attached && valFromNext !== undefined) i++
-            i++
-            continue
-          }
-          case 'u': {
-            const v = take(true)
-            if (v !== undefined) pg.use = v
-            if (!hasExplicitEq && !attached && valFromNext !== undefined) i++
-            i++
-            continue
-          }
-          case 'r': {
-            const v = take(true)?.toLowerCase()
-            if (v === 'podman' || v === 'docker') pg.provider = v
-            if (!hasExplicitEq && !attached && valFromNext !== undefined) i++
-            i++
-            continue
-          }
-          case 't': {
-            pg.term = true
-            i++
-            continue
-          }
-          case 'V': {
-            pg.listVersions = true
-            i++
-            continue
-          }
-          default: {
-            // Unknown -pgX : drop it to avoid breaking downstream
-            i++
-            continue
-          }
-        }
-      }
-
-      // Non-pg option -> passthrough untouched
-      passthrough.push(tok)
-      i++
-    }
-
-    if (!command) command = 'run'
-    return { pg, passthrough, command, useVersionArg }
-  }
-
-  async function handleVersions() {
-    console.log('Fetching available PocketBase versions from Docker Hub...')
-    const tags = await listDockerHubTags('benallfree', 'pocketbase')
-    if (tags.length > 0) {
-      console.log('Available PocketBase versions:')
-      for (const tag of tags) console.log(`  ${tag}`)
-    } else {
-      console.log('No versions found or error occurred')
-    }
-  }
-
-  async function runPocketBase(
-    isTermMode: boolean,
-    options: { port?: number; use?: string; provider?: 'podman' | 'docker' },
-    passthroughArgs: string[]
-  ) {
-    const currentDir = process.cwd()
-    const cliProviderRaw = (options.provider as string | undefined)?.toLowerCase()
-    if (cliProviderRaw && cliProviderRaw !== 'podman' && cliProviderRaw !== 'docker') {
-      console.error("Error: --pg-provider must be 'podman' or 'docker'")
+  const cliProvider = (cliProviderRaw as 'podman' | 'docker' | undefined) || null
+  const preferredProvider = cliProvider || readProviderFromConfig(configDir)
+  let runtime: 'podman' | 'docker' | null = null
+  if (preferredProvider) {
+    const isAvailable = preferredProvider === 'podman' ? podmanProvider.check() : dockerProvider.check()
+    if (!isAvailable) {
+      console.error(`Error: Provider '${preferredProvider}' is not available on PATH`)
       process.exit(1)
     }
-    const cliProvider = (cliProviderRaw as 'podman' | 'docker' | undefined) || null
-    const preferredProvider = cliProvider || readProviderFromConfig(currentDir)
-    let runtime: 'podman' | 'docker' | null = null
-    if (preferredProvider) {
-      const isAvailable = preferredProvider === 'podman' ? podmanProvider.check() : dockerProvider.check()
-      if (!isAvailable) {
-        console.error(`Error: Provider '${preferredProvider}' is not available on PATH`)
-        process.exit(1)
-      }
-      runtime = preferredProvider
-    } else {
-      runtime = detectContainerRuntime()
-      if (!runtime) {
-        console.error('Error: Neither Podman nor Docker is available on PATH')
-        process.exit(1)
-      }
-    }
-
-    const defaultVersion = readDefaultVersionFromConfig(currentDir) || 'latest'
-    const version = (options.use ?? defaultVersion).trim()
-
-    const port = options.port ?? 8090
-    if (Number.isNaN(port) || port < 1 || port > 65535) {
-      console.error('Error: Port must be a valid number between 1 and 65535')
+    runtime = preferredProvider
+  } else {
+    runtime = detectContainerRuntime()
+    if (!runtime) {
+      console.error('Error: Neither Podman nor Docker is available on PATH')
       process.exit(1)
     }
-
-    const runtimeOk = runtime === 'podman' ? podmanProvider.check() : dockerProvider.check()
-    if (!runtimeOk) {
-      console.error(`Error: Selected provider '${runtime}' is not available on PATH`)
-      process.exit(1)
-    }
-
-    const { command, args: providerArgs } = pbgo({
-      currentDir,
-      port,
-      version,
-      args: passthroughArgs,
-      isTermMode,
-      runtime,
-    })
-
-    console.log(`Running ${command} ${providerArgs.join(' ')}`)
-
-    const child = spawn(command, providerArgs, { stdio: 'inherit', shell: true })
-    child.on('error', (error) => {
-      console.error('Error running PocketBase:', (error as any).message)
-      process.exit(1)
-    })
-    child.on('exit', (code) => {
-      process.exit(code ?? 0)
-    })
   }
 
-  // Entry
-  const argv = process.argv.slice(2)
-  const { pg, passthrough, command, useVersionArg } = parseArgs(argv)
+  const defaultVersion = readDefaultVersionFromConfig(configDir) || 'latest'
+  const version = (options.use ?? defaultVersion).trim()
 
-  if (pg.listVersions || command === 'versions') {
+  const port = options.port ?? 8090
+  if (Number.isNaN(port) || port < 1 || port > 65535) {
+    console.error('Error: Port must be a valid number between 1 and 65535')
+    process.exit(1)
+  }
+
+  const runtimeOk = runtime === 'podman' ? podmanProvider.check() : dockerProvider.check()
+  if (!runtimeOk) {
+    console.error(`Error: Selected provider '${runtime}' is not available on PATH`)
+    process.exit(1)
+  }
+
+  const { command, args: providerArgs } = pbgo({
+    host: options.host,
+    port,
+    version,
+    args: passthroughArgs,
+    isTermMode,
+    runtime,
+    binds,
+  })
+
+  console.log(`Running ${command} ${providerArgs.join(' ')}`)
+
+  const child = spawn(command, providerArgs, { stdio: 'inherit', shell: true })
+  child.on('error', (error) => {
+    console.error('Error running PocketBase:', (error as any).message)
+    process.exit(1)
+  })
+  child.on('exit', (code) => {
+    process.exit(code ?? 0)
+  })
+}
+
+// CLI setup with Commander.js
+const program = new Command()
+
+program.name('pbgo').description('PocketBase container runner').version('0.0.1-rc.4').enablePositionalOptions() // Required for passThroughOptions on subcommands
+
+// Global options
+program
+  .option('--http <address>', 'HTTP server address (default: 0.0.0.0:8090)', '0.0.0.0:8090')
+  .option('-u, --use <version>', 'Run with specific PocketBase version')
+  .option('-r, --provider <provider>', 'Select provider: podman|docker')
+  .option('-t, --term', 'Run in terminal mode')
+  .option('--dir <dir>', 'PocketBase data directory (default: <cwd>/pb_data)')
+  .option('--hooksDir <hooksDir>', 'PocketBase hooks directory')
+  .option('--publicDir <publicDir>', 'PocketBase public directory')
+  .option('--migrationsDir <migrationsDir>', 'PocketBase migrations directory')
+  .allowUnknownOption() // Allow unknown options to be passed through
+
+// Default command (run PocketBase)
+program
+  .argument('[args...]', 'Arguments to pass to PocketBase')
+  .allowExcessArguments()
+  .passThroughOptions()
+  .action(async (args, options) => {
+    const { host, port } = parseHttpAddress(options.http)
+
+    await runPocketBase(
+      !!options.term,
+      {
+        host,
+        port,
+        use: options.use,
+        provider: options.provider,
+        dir: options.dir,
+        hooksDir: options.hooksDir,
+        publicDir: options.publicDir,
+        migrationsDir: options.migrationsDir,
+      },
+      args
+    )
+  })
+
+// Versions command
+program
+  .command('versions')
+  .description('List available PocketBase Docker tags')
+  .action(async () => {
     await handleVersions()
-    process.exit(0)
-  }
+  })
 
-  if (command === 'use') {
-    const version = useVersionArg
-    if (!version) {
-      console.error("Error: 'use' requires a <version> argument")
-      process.exit(1)
-    }
+// Use command
+program
+  .command('use <version>')
+  .description('Set default PocketBase version')
+  .action((version) => {
     try {
-      const currentDir = process.cwd()
-      writeDefaultVersionToConfig(currentDir, version)
-      console.log(`Default PocketBase version set to '${version}' in ${getPbgorcPath(currentDir)}`)
-      process.exit(0)
+      const globalOptions = program.opts()
+      const { dataDir } = parsePocketBaseDirectoryArgs(globalOptions.dir)
+      const configDir = path.dirname(dataDir)
+      writeDefaultVersionToConfig(configDir, version)
+      console.log(`Default PocketBase version set to '${version}' in ${getPbgorcPath(configDir)}`)
     } catch (error: any) {
       console.error('Error writing .pbgorc:', error.message)
       process.exit(1)
     }
-  }
+  })
 
-  await runPocketBase(!!pg.term, { port: pg.port, use: pg.use, provider: pg.provider }, passthrough)
+// Term command
+program
+  .command('term')
+  .description('Run in terminal mode')
+  .argument('[args...]', 'Arguments to pass to PocketBase')
+  .allowUnknownOption()
+  .allowExcessArguments()
+  .passThroughOptions()
+  .action(async (args) => {
+    const globalOptions = program.opts()
+    const { host, port } = parseHttpAddress(globalOptions.http)
+
+    await runPocketBase(
+      true,
+      {
+        host,
+        port,
+        use: globalOptions.use,
+        provider: globalOptions.provider,
+        dir: globalOptions.dir,
+        hooksDir: globalOptions.hooksDir,
+        publicDir: globalOptions.publicDir,
+        migrationsDir: globalOptions.migrationsDir,
+      },
+      args
+    )
+  })
+;(async () => {
+  await program.parseAsync()
 })()

@@ -31,4 +31,4 @@ WORKDIR /data
 
 EXPOSE 8090
 
-CMD ["pocketbase"]
+CMD ["pocketbase", "--dir=/data/pb_data"]

@@ -18,9 +18,9 @@
   },
   "scripts": {
     "update": "bun run update-versions.ts",
-    "build": "bun run build.ts",
-    "bundle": "tsdown",
+    "build": "tsdown",
     "dev": "tsdown --watch",
+    "docker:build": "bun run build.ts",
     "prepare": "bun run bundle",
     "lint": "prettier --check .",
     "format": "prettier --write ."
@@ -29,11 +29,15 @@
     "dist/",
     "versions.json"
   ],
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.2.0",
