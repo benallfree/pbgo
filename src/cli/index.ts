@@ -3,8 +3,11 @@
 import { Command } from 'commander'
 import { spawn } from 'node:child_process'
 import { version as pkgVersion } from '../../package.json'
-import { normalizeOptions, pbgo } from '../index'
+import { createUrlReplacer, findAvailablePort, normalizeOptions, pbgo } from '../index'
 import { config } from './config'
+import { TermCommand } from './TermCommand'
+import { UseCommand } from './UseCommand'
+import { VersionsCommand } from './VersionsCommand'
 
 const PBGO_OPTIONS = [
   '--http',
@@ -44,10 +47,10 @@ function parseHttpAddress(httpAddress: string | undefined): { host: string; port
   const parts = httpAddress.split(':')
   if (parts.length === 1) {
     // Just port number
-    return { host: '0.0.0.0', port: parseInt(parts[0] || '8090', 10) || 8090 }
+    return { host: '0.0.0.0', port: parseInt(parts[0]!, 10) }
   } else if (parts.length === 2) {
     // host:port
-    return { host: parts[0] || '0.0.0.0', port: parseInt(parts[1] || '8090', 10) || 8090 }
+    return { host: parts[0] || '0.0.0.0', port: parseInt(parts[1]!, 10) }
   } else {
     // Invalid format, use defaults
     return { host: '0.0.0.0', port: 8090 }
@@ -55,7 +58,7 @@ function parseHttpAddress(httpAddress: string | undefined): { host: string; port
 }
 
 // CLI setup with Commander.js
-const program = new Command().enablePositionalOptions()
+const program = new Command()
 
 program.name('pbgo').description('PocketBase container runner')
 
@@ -87,6 +90,10 @@ function displayVersionInfo(options: CliOptions) {
   })
 }
 
+program.addCommand(TermCommand())
+program.addCommand(UseCommand())
+program.addCommand(VersionsCommand())
+
 // Default command (run PocketBase)
 program
   .argument('[args...]', 'Arguments to pass to PocketBase')
@@ -102,9 +109,7 @@ program
   .option('--verbose', 'Verbose output')
   .allowExcessArguments()
   .allowUnknownOption()
-  .passThroughOptions()
-  .action(async (args: string[]) => {
-    const options = program.opts<CliOptions>()
+  .action(async (args: string[], options: CliOptions) => {
     // Handle version request - show both pbgo and PocketBase versions
     if (options.version) {
       await displayVersionInfo(options)
@@ -126,8 +131,17 @@ program
       }),
     })
 
+    if (pbgoOptions.port === 0) {
+      pbgoOptions.port = await findAvailablePort()
+    }
+
     const pbgoCmd = pbgo(pbgoOptions)
-    const child = spawn(pbgoCmd.command, pbgoCmd.args, { stdio: 'inherit', shell: true })
+    const child = spawn(pbgoCmd.command, pbgoCmd.args, { shell: true })
+
+    // Pipe stdout and stderr through separate transform streams
+    child.stdout?.pipe(createUrlReplacer(pbgoOptions.host, pbgoOptions.port)).pipe(process.stdout)
+    child.stderr?.pipe(createUrlReplacer(pbgoOptions.host, pbgoOptions.port)).pipe(process.stderr)
+
     child.on('exit', (code) => {
       process.exit(code ?? 0)
     })

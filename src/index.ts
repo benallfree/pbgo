@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
+import { Transform } from 'node:stream'
 import type { PbgoOptions } from './types'
+export { findAvailablePort } from './port'
 
 // Helper function to ensure directory exists
 const ensureDir = (dirPath: string, verbose: boolean = false): string => {
@@ -33,6 +35,7 @@ export const normalizeOptions = (partialOptions: Partial<PbgoOptions>): PbgoOpti
     verbose: false,
     ...partialOptions,
   }
+
   const { dir, hooksDir, publicDir, migrationsDir, binds } = options
   binds['pb_data'] = ensureDir(dir)
   binds['pb_hooks'] = ensureDir(hooksDir)
@@ -76,6 +79,16 @@ export function pbgo(partialOptions: Partial<PbgoOptions>) {
 
   if (options.verbose) console.log(`Assembled command: ${runtime} ${args.join(' ')}`)
   return { command: runtime, args }
+}
+
+// Transform stream to replace URLs in output
+export function createUrlReplacer(host: string, port: number): Transform {
+  return new Transform({
+    transform(chunk: Buffer, encoding: string, callback: (error?: Error | null, data?: Buffer) => void) {
+      const replaced = chunk.toString().replace(/http:\/\/0\.0\.0\.0:8090/g, `http://${host}:${port}`)
+      callback(null, Buffer.from(replaced))
+    },
+  })
 }
 
 export type { PbgoOptions }
