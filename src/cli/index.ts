@@ -100,7 +100,6 @@ program
   .option('--http <address>', 'HTTP server address', '0.0.0.0:8090')
   .option('-u, --use <version>', 'Run with specific PocketBase version', config.version)
   .option('-r, --runtime <runtime>', 'Select runtime: podman|docker', config.runtime)
-  .option('-t, --term', 'Run in terminal mode')
   .option('--dir <dir>', 'PocketBase data directory', './pb_data')
   .option('--hooksDir <hooksDir>', 'PocketBase hooks directory', './pb_hooks')
   .option('--publicDir <publicDir>', 'PocketBase public directory', './pb_public')
