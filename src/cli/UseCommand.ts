@@ -5,6 +5,7 @@ export const UseCommand = () => {
   return new Command(`use`)
     .argument('<version>', 'PocketBase version')
     .description('Set default PocketBase version')
+    .option(`--verbose`, 'Verbose output', false)
     .action((version) => {
       try {
         config.version = version
