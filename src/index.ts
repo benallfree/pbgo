@@ -1,23 +1,7 @@
-import { existsSync, mkdirSync } from 'node:fs'
-import path from 'node:path'
 import { Transform } from 'node:stream'
+import { ensureDir } from './dir'
 import type { PbgoOptions } from './types'
 export { findAvailablePort } from './port'
-
-// Helper function to ensure directory exists
-const ensureDir = (dirPath: string, verbose: boolean = false): string => {
-  const resolvedPath = path.resolve(dirPath)
-  if (!existsSync(resolvedPath)) {
-    try {
-      mkdirSync(resolvedPath, { recursive: true })
-      if (verbose) console.log(`Created directory: ${resolvedPath}`)
-    } catch (error) {
-      console.error(`Failed to create directory ${resolvedPath}:`, (error as Error).message)
-      process.exit(1)
-    }
-  }
-  return resolvedPath
-}
 
 export const normalizeOptions = (partialOptions: Partial<PbgoOptions>): PbgoOptions => {
   const options: PbgoOptions = {
