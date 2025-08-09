@@ -1,3 +1,4 @@
+import { join, resolve } from 'node:path'
 import { Transform } from 'node:stream'
 import { ensureDir } from './dir'
 import type { PbgoOptions } from './types'
@@ -12,19 +13,27 @@ export const normalizeOptions = (partialOptions: Partial<PbgoOptions>): PbgoOpti
     isTermMode: false,
     runtime: 'docker',
     binds: {},
-    dir: './pb_data',
-    hooksDir: './pb_hooks',
-    publicDir: './pb_public',
-    migrationsDir: './pb_migrations',
+    dir: '',
+    hooksDir: '',
+    publicDir: '',
+    migrationsDir: '',
     verbose: false,
     ...partialOptions,
   }
 
-  const { dir, hooksDir, publicDir, migrationsDir, binds } = options
-  binds['pb_data'] = ensureDir(dir)
-  binds['pb_hooks'] = ensureDir(hooksDir)
-  binds['pb_public'] = ensureDir(publicDir)
-  binds['pb_migrations'] = ensureDir(migrationsDir)
+  const { binds } = options
+  const dir = options.dir || 'pb_data'
+  const root = resolve(join(dir, '..'))
+  const hooksDir = options.hooksDir || join(root, 'pb_hooks')
+  const publicDir = options.publicDir || join(root, 'pb_public')
+  const migrationsDir = options.migrationsDir || join(root, 'pb_migrations')
+
+  binds['/app'] = process.cwd()
+  binds['/pb/pb_data'] = ensureDir(dir)
+  binds['/pb/pb_hooks'] = ensureDir(hooksDir)
+  binds['/pb/pb_public'] = ensureDir(publicDir)
+  binds['/pb/pb_migrations'] = ensureDir(migrationsDir)
+
   return options
 }
 
@@ -45,8 +54,7 @@ export function pbgo(partialOptions: Partial<PbgoOptions>) {
   // Layer additional bind mounts
   for (const [key, hostPath] of Object.entries(binds)) {
     if (!hostPath) continue
-    const containerPath = `/data/${key}`
-    args.splice(args.length - 1, 0, '-v', `${hostPath}:${containerPath}`)
+    args.splice(args.length - 1, 0, '-v', `${hostPath}:${key}`)
   }
 
   if (isTermMode) {
@@ -54,7 +62,6 @@ export function pbgo(partialOptions: Partial<PbgoOptions>) {
   } else {
     args.push(`pocketbase`)
     args.push(...userArgs)
-    args.push(`--dir=/data/pb_data`)
     const hasServeCommand = userArgs.includes('serve')
     if (hasServeCommand) {
       args.push(`"--http=0.0.0.0:8090"`)

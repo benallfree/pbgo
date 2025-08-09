@@ -27,8 +27,10 @@ RUN apk add --no-cache ca-certificates bash
 # Copy just the pocketbase binary from build stage
 COPY --from=builder /tmp/pocketbase/pocketbase /usr/local/bin/pocketbase
 
-WORKDIR /data
+RUN mkdir -p /pb /app
+
+WORKDIR /app
 
 EXPOSE 8090
 
-CMD ["pocketbase"]
+CMD ["pocketbase", "--dir=/pb/pb_data"]
