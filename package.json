@@ -1,6 +1,6 @@
 {
   "name": "pbgo",
-  "version": "0.0.1-rc.8",
+  "version": "0.0.1-rc.9",
   "description": "PocketBase container runner",
   "author": {
     "name": "Ben Allfree",
@@ -21,6 +21,7 @@
     "build": "tsdown",
     "dev": "tsdown --watch",
     "docker:build": "bun run build.ts",
+    "docker:build:push": "bun run build.ts --push --limit=0",
     "prepare": "bun run build",
     "lint": "prettier --check .",
     "format": "prettier --write ."

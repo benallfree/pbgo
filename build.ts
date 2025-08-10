@@ -1,13 +1,14 @@
 #!/usr/bin/env bun
 
 import { execSync } from 'child_process'
+import { Command } from 'commander'
 import { readFileSync } from 'fs'
 
 // Configuration
-const REGISTRY = process.env.REGISTRY || 'benallfree'
-const IMAGE_NAME = process.env.IMAGE_NAME || 'pocketbase'
+const REGISTRY = 'benallfree'
+const IMAGE_NAME = 'pocketbase'
 const PLATFORMS = 'linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v8'
-const LIMIT = parseInt(process.env.LIMIT || '5', 10)
+const LIMIT = 5
 
 // Colors for output
 const RED = '\x1b[31m'
@@ -174,90 +175,46 @@ const buildVersion = async (version: string, options: BuildOptions): Promise<boo
   }
 }
 
-const showHelp = (): void => {
-  console.log(`
-Multi-arch Docker build script for PocketBase instances
-
-Usage: node build.ts [OPTIONS]
-
-Options:
-    -p, --push          Push images to registry after building
-    -r, --registry      Registry name (default: benallfree)
-    -n, --name          Image name (default: pocketbase)
-    -l, --limit         Number of most recent versions to build (default: 5)
-    --platforms         Comma-separated list of platforms (default: linux/amd64,linux/arm64,linux/arm/v7)
-    -h, --help          Show this help message
-
-Environment variables:
-    REGISTRY            Registry name (overrides -r)
-    IMAGE_NAME          Image name (overrides -n)
-    LIMIT               Number of versions to build (overrides -l)
-    PUSH                Set to 'true' to push images
-
-Examples:
-    # Build 5 most recent versions locally (default)
-    node build.ts
-
-    # Build and push 10 most recent versions
-    node build.ts --push --limit 10
-
-    # Build all versions
-    node build.ts --limit 0
-
-    # Build with custom registry
-    node build.ts --registry myregistry --push
-
-    # Build with environment variables
-    REGISTRY=myregistry IMAGE_NAME=my-pocketbase LIMIT=3 PUSH=true node build.ts
-`)
-}
-
 const parseArgs = (): BuildOptions => {
-  const args = process.argv.slice(2)
-  const options: BuildOptions = {
-    push: process.env.PUSH === 'true',
-    registry: REGISTRY,
-    name: IMAGE_NAME,
-    limit: LIMIT,
-    platforms: PLATFORMS,
+  const program = new Command()
+
+  program
+    .name('build.ts')
+    .description('Multi-arch Docker build script for PocketBase instances')
+    .version('1.0.0')
+    .option('-p, --push', 'Push images to registry after building', false)
+    .option('-r, --registry <registry>', 'Registry name', REGISTRY)
+    .option('-n, --name <name>', 'Image name', IMAGE_NAME)
+    .option('-l, --limit <number>', 'Number of most recent versions to build', (value) => parseInt(value, 10), LIMIT)
+    .option('--platforms <platforms>', 'Comma-separated list of platforms', PLATFORMS)
+    .addHelpText(
+      'after',
+      `
+Examples:
+  # Build 5 most recent versions locally (default)
+  bun run build.ts
+
+  # Build and push 10 most recent versions
+  bun run build.ts --push --limit 10
+
+  # Build all versions
+  bun run build.ts --limit 0
+
+  # Build with custom registry
+  bun run build.ts --registry myregistry --push
+`
+    )
+
+  program.parse()
+  const options = program.opts()
+
+  return {
+    push: options.push,
+    registry: options.registry,
+    name: options.name,
+    limit: options.limit,
+    platforms: options.platforms,
   }
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]
-
-    switch (arg) {
-      case '-p':
-      case '--push':
-        options.push = true
-        break
-      case '-r':
-      case '--registry':
-        options.registry = args[++i]
-        break
-      case '-n':
-      case '--name':
-        options.name = args[++i]
-        break
-      case '-l':
-      case '--limit':
-        options.limit = parseInt(args[++i], 10)
-        break
-      case '--platforms':
-        options.platforms = args[++i]
-        break
-      case '-h':
-      case '--help':
-        showHelp()
-        process.exit(0)
-        break
-      default:
-        error(`Unknown option: ${arg}`)
-        showHelp()
-        process.exit(1)
-    }
-  }
-
-  return options
 }
 
 const main = async (): Promise<void> => {
