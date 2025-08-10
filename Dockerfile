@@ -46,5 +46,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 8090
 
+# trigger build
+
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["echo", "hello"]
