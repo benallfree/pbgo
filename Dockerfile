@@ -29,7 +29,7 @@ COPY --from=builder /tmp/pocketbase/pocketbase /usr/local/bin/pocketbase
 
 RUN mkdir -p /pb /app
 
-ENV BUN_INSTALL_CACHE_DIR=/app/.pbgo_cache
+ENV BUN_INSTALL_CACHE_DIR=/.bun_cache
 
 WORKDIR /app
 
@@ -45,8 +45,6 @@ EOF
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 8090
-
-# trigger build
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["echo", "hello"]

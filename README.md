@@ -90,10 +90,10 @@ npx pbgo versions
 | `--http <address>`                |       | `0.0.0.0:8090`        | Host bind address for the container port 8090. Use `0` or `0.0.0.0:0` to auto-select a free port. When using `serve`, pbgo ensures PocketBase binds to this address. |
 | `--use <version>`                 | `-u`  | `.pbgorc` or `latest` | Docker tag of `benallfree/pocketbase` to run. Accepts `latest`, `X.Y`, or `X.Y.Z`.                                                                                   |
 | `--runtime <runtime>`             | `-r`  | auto / `.pbgorc`      | Container runtime: `podman` or `docker`. Auto-detect prefers Podman if available.                                                                                    |
-| `--dir <dir>`                     |       | `./pb_data`           | Host data directory mounted to `/data/pb_data` in the container.                                                                                                     |
-| `--hooksDir <hooksDir>`           |       | `./pb_hooks`          | Host hooks directory mounted to `/data/pb_hooks`.                                                                                                                    |
-| `--publicDir <publicDir>`         |       | `./pb_public`         | Host public directory mounted to `/data/pb_public`.                                                                                                                  |
-| `--migrationsDir <migrationsDir>` |       | `./pb_migrations`     | Host migrations directory mounted to `/data/pb_migrations`.                                                                                                          |
+| `--dir <dir>`                     |       | `./pb_data`           | Host data directory mounted to `/pb/pb_data` in the container.                                                                                                       |
+| `--hooksDir <hooksDir>`           |       | `./pb_hooks`          | Host hooks directory mounted to `/pb/pb_hooks`.                                                                                                                      |
+| `--publicDir <publicDir>`         |       | `./pb_public`         | Host public directory mounted to `/pb/pb_public`.                                                                                                                    |
+| `--migrationsDir <migrationsDir>` |       | `./pb_migrations`     | Host migrations directory mounted to `/pb/pb_migrations`.                                                                                                            |
 | `--version`                       | `-v`  |                       | Prints `pbgo` version and the PocketBase version reported by the container for the selected tag.                                                                     |
 | `--verbose`                       |       |                       | Prints the assembled container command and rewrites output URLs to your chosen host/port.                                                                            |
 
@@ -140,6 +140,77 @@ Images are published to the Docker registry [benallfree/pocketbase](https://hub.
 - **full semver**: `X.Y.Z` tags for specific versions (e.g., `0.29.1`)
 
 You can reference any of these with `--use` or set a default via `.pbgorc`.
+
+## Container filesystem and mounts
+
+- **Working dir**: `/app` is the main directory and PocketBase runs with this as the CWD.
+- **Host CWD bind**: Your host current working directory is bind-mounted to `/app`.
+- **PocketBase special dirs**: Each is mounted separately, so they can live anywhere on host:
+  - Host `pb_data` → container `/pb/pb_data`
+  - Host `pb_hooks` → container `/pb/pb_hooks`
+  - Host `pb_public` → container `/pb/pb_public`
+  - Host `pb_migrations` → container `/pb/pb_migrations`
+    By default, these directories are resolved relative to your host CWD unless overridden via options.
+
+## Bun and node_modules support
+
+- If a `package.json` exists in your host CWD, the container will automatically run `bun i` on startup.
+- The Bun install cache inside the container is `/.bun_cache`, which is bind-mounted to:
+  - The host Bun cache directory from `bun pm cache`, if available, otherwise
+  - `<cwd>/.pbgo/bun` (created if missing)
+- With a warm cache, running `bun i` on startup adds almost no startup time.
+- Parent `node_modules` outside your project are not visible inside the container; ensure your `package.json` declares all needed dependencies.
+
+## Runtime detection (Podman preferred)
+
+- The runtime is auto-detected: Podman if available, otherwise Docker. If neither is found, the CLI throws.
+- If Podman is installed, it's assumed preferred over Docker.
+
+## Ports and auto-selection
+
+- Use `--http 0.0.0.0:0` (or `--http 0`) to request an ephemeral host port. The CLI will find a free port and map it to the container's `8090`.
+- Output URLs are rewritten to your selected host/port when `--verbose` is enabled.
+
+## Programmatic API
+
+You can use selected utilities from code:
+
+```ts
+import { findAvailablePort } from 'pbgo'
+
+const port = await findAvailablePort() // returns an available TCP port number on the host
+```
+
+### Building a container command with `pbgo()`
+
+`pbgo(options)` returns `{ command, args }` that you can pass to `spawn` (or similar). It auto-detects the runtime, mounts your host CWD to `/app`, binds Bun cache to `/.bun_cache`, and maps PocketBase special dirs to `/pb/*`.
+
+Minimal example:
+
+```ts
+import { spawn } from 'node:child_process'
+import { pbgo, findAvailablePort, createUrlReplacer } from 'pbgo'
+
+const port = await findAvailablePort()
+const host = '0.0.0.0'
+
+const { command, args } = pbgo({
+  host,
+  port,
+  use: 'latest',
+  args: ['serve', '--dev'], // forwarded to PocketBase
+  verbose: true,
+})
+
+const child = spawn(command, args, { shell: true })
+child.stdout?.pipe(createUrlReplacer(host, port)).pipe(process.stdout)
+child.stderr?.pipe(createUrlReplacer(host, port)).pipe(process.stderr)
+```
+
+Notes:
+
+- If `args` contains `serve`, the container is forced to bind to `0.0.0.0:8090` internally; host/port mapping is handled via `-p host:port:8090`.
+- You can override mounts via `dir`, `hooksDir`, `publicDir`, `migrationsDir`, or `binds`.
 
 ## Version Tags
 

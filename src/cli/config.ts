@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { detectContainerRuntime } from './detect'
+import { detectContainerRuntime } from '../detect'
 
 export type Pbgorc = {
   version: string

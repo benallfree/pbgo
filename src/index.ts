@@ -1,8 +1,20 @@
+import { execSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { Transform } from 'node:stream'
+import { detectContainerRuntime } from './detect'
 import { ensureDir } from './dir'
 import type { PbgoOptions } from './types'
 export { findAvailablePort } from './port'
+
+const BUN_CACHE_DIR = (() => {
+  try {
+    return execSync('bun pm cache', { encoding: 'utf8' }).trim()
+  } catch (error) {
+    return join(process.cwd(), '.pbgo', 'bun')
+  }
+})()
+
+const DEFAULT_RUNTIME = detectContainerRuntime()
 
 export const normalizeOptions = (partialOptions: Partial<PbgoOptions>): PbgoOptions => {
   const options: PbgoOptions = {
@@ -11,7 +23,7 @@ export const normalizeOptions = (partialOptions: Partial<PbgoOptions>): PbgoOpti
     use: 'latest',
     args: [],
     isTermMode: false,
-    runtime: 'docker',
+    runtime: DEFAULT_RUNTIME,
     binds: {},
     dir: '',
     hooksDir: '',
@@ -29,7 +41,7 @@ export const normalizeOptions = (partialOptions: Partial<PbgoOptions>): PbgoOpti
   const migrationsDir = options.migrationsDir || join(root, 'pb_migrations')
 
   binds['/app'] = process.cwd()
-  binds['/app/.pbgo_cache'] = ensureDir(join(process.cwd(), '.pbgo_cache'))
+  binds['/.bun_cache'] = ensureDir(BUN_CACHE_DIR)
   binds['/pb/pb_data'] = ensureDir(dir)
   binds['/pb/pb_hooks'] = ensureDir(hooksDir)
   binds['/pb/pb_public'] = ensureDir(publicDir)
