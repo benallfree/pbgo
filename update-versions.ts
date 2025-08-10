@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 
+import { Command } from 'commander'
 import { readFileSync, writeFileSync } from 'fs'
+import { major, minor, patch, compare as semverCompare, valid } from 'semver'
 
 // Colors for output
 const GREEN = '\x1b[32m'
@@ -77,21 +79,14 @@ const fetchGitHubReleases = async (): Promise<string[]> => {
 }
 
 const parseVersion = (version: string): VersionInfo | null => {
-  const parts = version.split('.')
-  if (parts.length < 3) return null
-
-  const major = parseInt(parts[0], 10)
-  const minor = parseInt(parts[1], 10)
-  const patch = parseInt(parts[2], 10)
-
-  if (isNaN(major) || isNaN(minor) || isNaN(patch)) return null
+  if (!valid(version)) return null
 
   return {
-    major,
-    minor,
-    patch,
+    major: major(version),
+    minor: minor(version),
+    patch: patch(version),
     version,
-    sortKey: major * 10000 + minor * 100 + patch,
+    sortKey: major(version) * 10000 + minor(version) * 100 + patch(version),
   }
 }
 
@@ -114,7 +109,7 @@ const filterLatestPatches = (versions: string[]): string[] => {
 
   // Sort by version number (descending)
   return Array.from(versionMap.values())
-    .sort((a, b) => b.sortKey - a.sortKey)
+    .sort((a, b) => semverCompare(b.version, a.version))
     .map((v) => v.version)
 }
 
@@ -152,8 +147,34 @@ const updateVersionsFile = (versions: string[]) => {
   }
 }
 
+const parseArgs = () => {
+  const program = new Command()
+
+  program
+    .name('update-versions.ts')
+    .description('Update versions.json with latest PocketBase releases from GitHub')
+    .version('1.0.0')
+    .option('-v, --verbose', 'Show detailed output including all found versions', false)
+    .addHelpText(
+      'after',
+      `
+Examples:
+  # Update versions.json with latest releases
+  bun run update-versions.ts
+
+  # Show detailed output with all found versions
+  bun run update-versions.ts --verbose
+`
+    )
+
+  program.parse()
+  return program.opts()
+}
+
 const main = async () => {
   try {
+    const options = parseArgs()
+
     const versions = await fetchGitHubReleases()
 
     if (versions.length === 0) {
@@ -163,12 +184,14 @@ const main = async () => {
 
     log(`Total versions found: ${versions.length}`)
 
-    log('All versions found:')
-    versions.slice(0, 20).forEach((version) => {
-      console.log(`  ${version}`)
-    })
-    if (versions.length > 20) {
-      console.log(`  ... (and ${versions.length - 20} more)`)
+    if (options.verbose) {
+      log('All versions found:')
+      versions.slice(0, 20).forEach((version) => {
+        console.log(`  ${version}`)
+      })
+      if (versions.length > 20) {
+        console.log(`  ... (and ${versions.length - 20} more)`)
+      }
     }
 
     const filteredVersions = filterLatestPatches(versions)
@@ -180,7 +203,7 @@ const main = async () => {
 
     updateVersionsFile(filteredVersions)
 
-    log("Run './build.sh --push' to build images with the updated versions")
+    log('Run "bun run build.ts --push" to build images with the updated versions')
   } catch (error) {
     console.error('Error:', error)
     process.exit(1)
