@@ -212,6 +212,23 @@ Notes:
 - If `args` contains `serve`, the container is forced to bind to `0.0.0.0:8090` internally; host/port mapping is handled via `-p host:port:8090`.
 - You can override mounts via `dir`, `hooksDir`, `publicDir`, `migrationsDir`, or `binds`.
 
+#### `pbgo()` options
+
+| Option          | Type                    | Default                    | Description                                                                                                                 |
+| --------------- | ----------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `use`           | `string`                | `latest`                   | Docker tag for `benallfree/pocketbase` (e.g., `latest`, `0.29`, `0.29.1`).                                                  |
+| `host`          | `string`                | `0.0.0.0`                  | Host interface used.                                                                                                        |
+| `port`          | `number`                | `8090`                     | Host port mapped to container `8090`. For ephemeral selection, call `findAvailablePort()` yourself before calling `pbgo()`. |
+| `args`          | `string[]`              | `[]`                       | Extra args forwarded to PocketBase. If `args` includes `serve`, `pbgo()` ensures internal bind to `0.0.0.0:8090`.           |
+| `isTermMode`    | `boolean`               | `false`                    | When `true`, runs interactive shell (`-it bash`) instead of PocketBase; no port mapping.                                    |
+| `binds`         | `Record<string,string>` | `{}` (merged)              | Additional container bind mounts (`target` → `host`). Merged with defaults for `/app`, `/.bun_cache`, and `/pb/*`.          |
+| `runtime`       | `'podman' \| 'docker'`  | auto-detected              | Container runtime; auto-detection prefers Podman, then Docker.                                                              |
+| `dir`           | `string`                | `pb_data` (host CWD)       | Host data directory bound to `/pb/pb_data`.                                                                                 |
+| `hooksDir`      | `string`                | `pb_hooks` (host CWD)      | Host hooks directory bound to `/pb/pb_hooks`.                                                                               |
+| `publicDir`     | `string`                | `pb_public` (host CWD)     | Host public directory bound to `/pb/pb_public`.                                                                             |
+| `migrationsDir` | `string`                | `pb_migrations` (host CWD) | Host migrations directory bound to `/pb/pb_migrations`.                                                                     |
+| `verbose`       | `boolean`               | `false`                    | When `true`, logs the assembled command.                                                                                    |
+
 ## Version Tags
 
 The following versions are currently supported by the registry and CLI:
