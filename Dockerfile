@@ -20,7 +20,7 @@ RUN case ${TARGETARCH} in \
 # POCKETBASE_END
 
 # Runtime stage
-FROM alpine
+FROM oven/bun:alpine
 
 RUN apk add --no-cache ca-certificates bash
 
@@ -29,8 +29,22 @@ COPY --from=builder /tmp/pocketbase/pocketbase /usr/local/bin/pocketbase
 
 RUN mkdir -p /pb /app
 
+ENV BUN_INSTALL_CACHE_DIR=/app/.pbgo_cache
+
 WORKDIR /app
+
+# Copy source code
+COPY . .
+
+# Create entrypoint script in /usr/local/bin so it won't be overwritten by volume mounts
+RUN cat > /usr/local/bin/entrypoint.sh << 'EOF'
+#!/bin/bash
+bun i
+exec "$@"
+EOF
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 8090
 
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["echo", "hello"]

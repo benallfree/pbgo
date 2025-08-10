@@ -29,6 +29,7 @@ export const normalizeOptions = (partialOptions: Partial<PbgoOptions>): PbgoOpti
   const migrationsDir = options.migrationsDir || join(root, 'pb_migrations')
 
   binds['/app'] = process.cwd()
+  binds['/app/.pbgo_cache'] = ensureDir(join(process.cwd(), '.pbgo_cache'))
   binds['/pb/pb_data'] = ensureDir(dir)
   binds['/pb/pb_hooks'] = ensureDir(hooksDir)
   binds['/pb/pb_public'] = ensureDir(publicDir)
@@ -45,9 +46,7 @@ export function pbgo(partialOptions: Partial<PbgoOptions>) {
   const args = [
     'run',
     '--rm',
-    isTermMode ? '-it' : '',
-    '-p',
-    `${host}:${port}:8090`,
+    ...(isTermMode ? ['-it'] : ['-p', `${host}:${port}:8090`]),
     `benallfree/pocketbase:${use}`,
   ].filter(Boolean)
 
