@@ -61,6 +61,7 @@ export function pbgo(partialOptions: Partial<PbgoOptions>) {
     args.push('bash')
   } else {
     args.push(`pocketbase`)
+    args.push(`--dir=/pb/pb_data`)
     args.push(...userArgs)
     const hasServeCommand = userArgs.includes('serve')
     if (hasServeCommand) {

@@ -33,4 +33,4 @@ WORKDIR /app
 
 EXPOSE 8090
 
-CMD ["pocketbase", "--dir=/pb/pb_data"]
+CMD ["echo", "hello"]
